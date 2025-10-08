@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Para ti 💗</title>
+  <style>
+    :root{
+      --bg1:#0c0a1a;
+      --bg2:#150a22;
+      --accent:#ff4d88;
+      --accent2:#ffb3d9;
+      --text:#f7eef6;
+    }
+    html,body{height:100%;margin:0}
+    body{
+      background: radial-gradient(circle at 20% 10%, rgba(255,77,136,0.10), transparent 25%),
+                  radial-gradient(circle at 80% 20%, rgba(255,179,217,0.10), transparent 25%),
+                  linear-gradient(180deg,var(--bg1),var(--bg2));
+      color:var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, 'Coolvetica', 'Poppins', sans-serif;
+      overflow:hidden;
+    }
+    #stage{position:fixed; inset:0; display:block}
+    .overlay{
+      position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+      pointer-events:none; flex-direction:column; text-align:center; padding:24px;
+    }
+    h1{margin:0 0 8px 0; font-weight:700; letter-spacing:-0.02em; font-size:clamp(22px,3.5vw,40px)}
+    p.sub{margin:6px 0 0 0; opacity:.9; font-size:clamp(14px,2.2vw,18px)}
+    .caption{
+      position:fixed; left:50%; bottom:28px; transform:translateX(-50%);
+      background: rgba(255,255,255,0.06);
+      border:1px solid rgba(255,255,255,0.08);
+      padding:10px 14px; border-radius:12px; backdrop-filter: blur(6px);
+      font-size:clamp(13px,2.4vw,18px);
+      max-width:min(90vw,800px);
+      box-shadow: 0 8px 28px rgba(0,0,0,.35);
+    }
+    .tap{position:fixed; top:14px; left:50%; transform:translateX(-50%); opacity:.8; font-size:14px}
+    /* Banner after explosion */
+    .banner{
+      position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) scale(.9);
+      padding:16px 24px; border-radius:16px;
+      background: linear-gradient(90deg, rgba(255,77,136,.96), rgba(255,179,217,.96));
+      color:#1a0c1a; font-weight:900; letter-spacing:.5px;
+      font-family:'Coolvetica', 'Poppins', sans-serif;
+      font-size: clamp(28px, 6vw, 56px);
+      box-shadow: 0 18px 60px rgba(255,77,136,.35);
+      border: 1px solid rgba(255,255,255,.35);
+      opacity:0; pointer-events:none;
+    }
+    .banner.show{animation: popIn .9s cubic-bezier(.2,.9,.2,1.3) forwards}
+    @keyframes popIn{
+      0%{opacity:0; transform:translate(-50%,-50%) scale(.7) rotate(-1.5deg)}
+      60%{opacity:1; transform:translate(-50%,-50%) scale(1.06) rotate(.6deg)}
+      100%{opacity:1; transform:translate(-50%,-50%) scale(1) rotate(0)}
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage" aria-label="Corazón de letras"></canvas>
+
+  <div class="overlay" aria-hidden="true">
+    <h1>💗</h1>
+    <p class="sub">Quieres saber que pasa si tocas el corazon?</p>
+  </div>
+
+  <div class="caption">desde que te conocí supe que eras todo lo que necesitaba</div>
+  <div class="tap">toca el corazon mi niña </div>
+  <div id="banner" class="banner">te amo mi bebe</div>
+
+  <script>
+  // === Config ===
+  const LETTERS = "paulitademividateamotantominiñahermosa";
+  const COUNT = 700;           // cuántas letras
+  const HEART_SIZE = 14;       // densidad de puntos (cuanto menor, más denso) en espacio lógico
+  const BOUNCE_AMPL = 6;       // amplitud de rebote
+  const HEART_PULSE = 0.06;    // escala del latido
+  const CLICK_EXPLOSION = true;
+  const FIREWORKS_AFTER = true;
+
+  // Canvas setup
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  let W, H, DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  function resize(){
+    W = canvas.width = Math.floor(innerWidth * DPR);
+    H = canvas.height = Math.floor(innerHeight * DPR);
+    canvas.style.width = innerWidth + 'px';
+    canvas.style.height = innerHeight + 'px';
+    centerX = W/2; centerY = H/2;
+    generateTargets();
+  }
+  window.addEventListener('resize', resize);
+
+  // Heart implicit function: (x^2 + y^2 - 1)^3 - x^2 y^3 = 0
+  function insideHeart(x, y){
+    const a = x*x + y*y - 1;
+    return (a*a*a - x*x*y*y*y) <= 0;
+  }
+
+  // Sample target points in logical space then scale to canvas
+  let targets = [];
+  let centerX = 0, centerY = 0;
+  function generateTargets(){
+    targets = [];
+    // Logical coords in range [-1.6, 1.6]
+    const scale = Math.min(W, H) * 0.26; // overall size
+    const step = 2 / HEART_SIZE; // sampling step
+    for (let y=-1.4; y<=1.4; y+=step){
+      for (let x=-1.5; x<=1.5; x+=step){
+        if (insideHeart(x, y) && Math.random() < 0.92){
+          targets.push({
+            x: centerX + x * scale + (Math.random()-0.5)*6,
+            y: centerY + y * scale + (Math.random()-0.5)*6
+          });
+        }
+      }
+    }
+    // Shuffle targets for nicer distribution
+    for (let i = targets.length - 1; i > 0; i--) {
+      const j = (Math.random()* (i+1))|0; const t = targets[i]; targets[i]=targets[j]; targets[j]=t;
+    }
+  }
+
+  class LetterParticle{
+    constructor(i){
+      this.ch = LETTERS[(Math.random()*LETTERS.length)|0];
+      this.size = 12 + Math.random()*10;
+      this.color = Math.random()<0.12 ? 'rgba(255,179,217,0.95)' : 'rgba(255,77,136,0.95)';
+      this.x = Math.random()*W;
+      this.y = H + Math.random()*H*0.5;
+      this.vx = (Math.random()-0.5)*0.6;
+      this.vy = - (1.0 + Math.random()*1.0);
+      this.t = 0;
+      this.phase = Math.random() * Math.PI*2;
+      this.target = targets[i % targets.length] || {x:W/2, y:H/2};
+      this.reached = false;
+      this.dead = false;
+      this.alpha = 1;
+    }
+    update(dt, time){
+      if (this.dead) return;
+      // Ease towards target until close
+      const dx = this.target.x - this.x;
+      const dy = this.target.y - this.y;
+      const dist = Math.hypot(dx, dy);
+      if (!this.reached){
+        const ease = Math.min(1, dt * 0.9);
+        this.x += dx * 0.06 * ease;
+        this.y += dy * 0.06 * ease;
+        if (dist < 6) this.reached = true;
+      }else{
+        // Bounce / pulse around target
+        const bounce = Math.sin(time*0.003 + this.phase) * BOUNCE_AMPL * DPR;
+        const pulse = 1 + Math.sin(time*0.002) * HEART_PULSE;
+        this.x = this.target.x * pulse + Math.sin(time*0.0013 + this.phase)*1.2;
+        this.y = this.target.y * pulse + bounce;
+      }
+      // draw
+      ctx.save();
+      ctx.globalAlpha = this.alpha;
+      ctx.font = (this.size * DPR).toFixed(0) + "px 'Coolvetica', 'Poppins', sans-serif";
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle = this.color;
+      ctx.fillText(this.ch, this.x, this.y);
+      ctx.restore();
+    }
+    explode(cx, cy){
+      // give velocity away from center
+      const ang = Math.atan2(this.y - cy, this.x - cx) + (Math.random()-0.5)*0.35;
+      const speed = 3 + Math.random()*5;
+      this.vx = Math.cos(ang) * speed;
+      this.vy = Math.sin(ang) * speed;
+      this.reached = true; // stop following target
+      this.update = (dt, time)=>{
+        if (this.dead) return;
+        this.vy += 0.06 * DPR; // gravity
+        this.x += this.vx * DPR;
+        this.y += this.vy * DPR;
+        this.alpha -= 0.009;
+        if (this.alpha <= 0) { this.dead = true; this.alpha = 0; }
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, this.alpha);
+        ctx.font = (this.size * DPR).toFixed(0) + "px 'Coolvetica', 'Poppins', sans-serif";
+        ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillStyle = this.color;
+        ctx.fillText(this.ch, this.x, this.y);
+        ctx.restore();
+      };
+    }
+  }
+
+  // Fireworks
+  const fw = {
+    rockets: [],
+    sparks: [],
+    launch(){
+      const n = 2 + (Math.random()*3)|0;
+      for(let i=0;i<n;i++){
+        this.rockets.push({
+          x: Math.random()*W*0.8 + W*0.1,
+          y: H + 10,
+          vx: (Math.random()-0.5)*0.6,
+          vy: - (4.5 + Math.random()*1.5) * DPR,
+          color: `hsl(${Math.floor(Math.random()*360)},90%,60%)`,
+          life: 40 + (Math.random()*20)|0
+        });
+      }
+    },
+    update(){
+      // rockets
+      for (let i=this.rockets.length-1; i>=0; i--){
+        const r = this.rockets[i];
+        r.x += r.vx; r.y += r.vy;
+        r.vy += 0.06*DPR;
+        r.life--;
+        // trail
+        ctx.save();
+        ctx.globalAlpha = .7;
+        ctx.fillStyle = r.color;
+        ctx.fillRect(r.x-1.5, r.y-1.5, 3, 3);
+        ctx.restore();
+        if (r.life<=0 || r.vy>=-0.2){
+          // explode
+          for(let k=0;k<100;k++){
+            const ang = (Math.PI*2) * (k/100) + Math.random()*0.2;
+            const spd = 2 + Math.random()*3;
+            fw.sparks.push({
+              x:r.x, y:r.y,
+              vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd,
+              life: 50 + (Math.random()*20)|0,
+              color: r.color, alpha:1
+            });
+          }
+          this.rockets.splice(i,1);
+        }
+      }
+      // sparks
+      for (let i=fw.sparks.length-1;i>=0;i--){
+        const s = fw.sparks[i];
+        s.x += s.vx; s.y += s.vy;
+        s.vy += 0.04*DPR;
+        s.alpha -= 0.015;
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, s.alpha);
+        ctx.fillStyle = s.color;
+        ctx.fillRect(s.x, s.y, 2.2, 2.2);
+        ctx.restore();
+        if (s.alpha<=0) fw.sparks.splice(i,1);
+      }
+    }
+  };
+
+  // Create particles
+  let particles = [];
+  let exploded = false;
+  function init(){
+    resize();
+    particles = [];
+    for (let i=0;i<COUNT;i++) particles.push(new LetterParticle(i));
+  }
+  init();
+
+  // Loop
+  let last = performance.now();
+  (function animate(t){
+    const dt = Math.min(33, t-last); last = t;
+    ctx.clearRect(0,0,W,H);
+
+    // soft glow behind heart
+    ctx.save();
+    const grd = ctx.createRadialGradient(W/2, H/2, 10*DPR, W/2, H/2, Math.min(W,H)*0.35);
+    grd.addColorStop(0, 'rgba(255,77,136,0.20)');
+    grd.addColorStop(1, 'rgba(255,77,136,0.0)');
+    ctx.fillStyle = grd;
+    ctx.fillRect(0,0,W,H);
+    ctx.restore();
+
+    // particles
+    for (const p of particles){ p.update(dt, t); }
+
+    // fireworks layer
+    fw.update();
+
+    requestAnimationFrame(animate);
+  })(last);
+
+  function explode(){
+    if (exploded) return;
+    exploded = true;
+    const cx = W/2, cy = H/2;
+    for (const p of particles) p.explode(cx, cy);
+    // Schedule some fireworks
+    if (FIREWORKS_AFTER){
+      let c = 0;
+      const iv = setInterval(()=>{
+        fw.launch();
+        if (++c>6) clearInterval(iv);
+      }, 450);
+    }
+    // Show banner
+    const banner = document.getElementById('banner');
+    banner.classList.add('show');
+  }
+
+  // click / tap
+  canvas.addEventListener('click', explode);
+  canvas.addEventListener('touchstart', (e)=>{ e.preventDefault(); explode(); }, {passive:false});
+
+  // accessibility: press Enter/Space to explode
+  window.addEventListener('keydown', (e)=>{
+    if (e.code==='Enter' || e.code==='Space') explode();
+  });
+
+  </script>
+</body>
+</html>
