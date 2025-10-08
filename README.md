@@ -1,2 +1,0 @@
-# Teamomini-aa
-mua mua
